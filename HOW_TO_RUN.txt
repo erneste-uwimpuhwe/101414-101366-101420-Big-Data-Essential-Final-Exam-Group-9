@@ -1,0 +1,171 @@
+===============================================================
+ RwandaRide - How To Run
+ Real-Time Ride-Hailing Pipeline with ML ETA Prediction
+---------------------------------------------------------------
+ Big Data Essentials - Group Final Exam Project
+ Adventist University of Central Africa
+ Lecturer: Dr Kundan Kumar
+
+ Patrick NIYONSHUTI   101420
+ Erneste UWIMPUHWE    101414
+ Gisele UWIBEREYEHO   101366
+===============================================================
+
+
+WHAT THIS PROJECT DOES
+---------------------------------------------------------------
+Trip events are generated, validated by a Django REST API, and
+published to Kafka. Two Kafka Connect sinks write every event to
+MariaDB (current state) and to HDFS as Parquet (full history).
+A custom consumer group flags trips running late. Spark MLlib
+trains a model on the HDFS history and predicts trip duration.
+A Django dashboard shows all of it live.
+
+
+BEFORE YOU START
+---------------------------------------------------------------
+Required on the machine:
+  - Java 8   (Hadoop needs this)
+  - Java 17  (Kafka Connect needs this)
+  - Python 3.13
+  - MariaDB service running
+  - Hadoop and Kafka installed at C:\hadoop and C:\kafka
+
+NOTE: the two Java versions are handled automatically by the
+start script. You do not need to change JAVA_HOME yourself.
+
+If MariaDB is not running, open an Administrator command
+prompt and run:
+
+    net start MariaDB
+
+
+STEP 1 - START EVERYTHING
+---------------------------------------------------------------
+Open a NEW command prompt (normal, not Administrator) and run:
+
+    cd /d D:\bigdata-final\scripts
+    start_all.cmd
+
+This opens 8 windows in the correct order and takes about
+2 minutes. Please do not click or type while it runs - the
+pauses between stages are deliberate.
+
+Leave all 8 windows open for the whole session. Closing one
+stops that part of the pipeline.
+
+
+STEP 2 - CHECK IT IS WORKING
+---------------------------------------------------------------
+Wait about 90 seconds after the script finishes.
+
+Look at the window titled "8 - GROWTH MONITOR".
+Four numbers should be increasing every 15 seconds:
+  - Kafka offsets
+  - MariaDB trip rows
+  - Late-trip alerts
+  - HDFS Parquet size
+
+If the numbers are climbing, the pipeline is live.
+
+To run a full health check at any time, open a NEW window:
+
+    cd /d D:\bigdata-final\scripts
+    check_all.cmd
+
+
+STEP 3 - WHAT TO OPEN IN THE BROWSER
+---------------------------------------------------------------
+  Dispatch dashboard    http://localhost:8000
+  Django admin          http://localhost:8080
+  HDFS file browser     http://localhost:9870
+       (go to Utilities > Browse the file system > /data)
+
+The dashboard is the main screen. It has 7 charts, all
+recomputed from the database on every page load.
+
+
+STEP 4 - SEEING THE LIVE DATA (OPTIONAL)
+---------------------------------------------------------------
+Each of these opens in its own NEW command prompt window.
+
+To see actual trip records, alerts and predictions:
+
+    cd /d D:\bigdata-final\scripts
+    watch_data.cmd
+
+To see raw Kafka messages with partition, key and offset:
+
+    cd /d D:\bigdata-final\scripts
+    watch_kafka.cmd
+
+Press Ctrl+C to stop either one.
+
+
+STEP 5 - SHUTTING DOWN
+---------------------------------------------------------------
+Press Ctrl+C in each window, in this order:
+    consumers  ->  Kafka Connect  ->  Kafka
+
+Then, in any window:
+
+    stop-dfs.cmd
+
+Confirm everything stopped:
+
+    jps
+
+Only "Jps" should be listed.
+
+
+IF SOMETHING DOES NOT WORK
+---------------------------------------------------------------
+Symptom: script stops saying MariaDB is down
+  Fix:   Administrator prompt, run:  net start MariaDB
+         then run start_all.cmd again
+
+Symptom: HDFS numbers are frozen but MariaDB keeps rising
+  Cause: unclosed HDFS lease after a restart (known Windows
+         issue, documented in our report)
+  Fix:   open a NEW window and run:
+             hdfs debug recoverLease -path /data/trip-events -retries 3
+         then restart Kafka Connect
+
+Symptom: check_all.cmd says a sink "has no active members"
+  Fix:   that sink task has died - restart Kafka Connect
+
+Symptom: Kafka window shows "all log dirs have failed"
+  Cause: Windows file-lock issue in the Kafka log cleaner
+  Fix:   confirm this line exists in
+         C:\kafka\config\kraft\server.properties
+             log.cleaner.enable=false
+         then run start_all.cmd again
+
+
+FILES IN THIS PROJECT
+---------------------------------------------------------------
+  generate.py        creates synthetic trip events
+  producer_api.py    Django REST API, validates and publishes
+  consumer_app.py    consumer group, late-trip alerts
+  insights.py        PySpark batch jobs over HDFS
+  train_model.py     trains the Spark MLlib GBT model
+  score_batch.py     loads the saved model and predicts
+  scripts\           the .cmd helper scripts described above
+
+
+RESULTS SUMMARY
+---------------------------------------------------------------
+  Events processed end to end      2,390,000+
+  Model                            GBTRegressor (Spark MLlib)
+  RMSE                             2.821 minutes
+  MAE                              2.151 minutes
+  R squared                        0.991
+  Theoretical noise floor          1.800 minutes
+
+The noise floor is important: the data generator adds random
+noise with a standard deviation of 1.8 minutes, so no model
+can score below that. Our result sits close to that limit,
+which is why we can say the model is good rather than simply
+reporting a low number.
+
+===============================================================

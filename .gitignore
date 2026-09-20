@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.log
+hs_err_pid*.log
+replay_pid*.log
+.env
+venv/
+env/
+db.sqlite3
+kafka-logs/
+hadoop-data/
+*.parquet
+models/
+eta_gbt/
+spark-warehouse/
+metastore_db/
+derby.log

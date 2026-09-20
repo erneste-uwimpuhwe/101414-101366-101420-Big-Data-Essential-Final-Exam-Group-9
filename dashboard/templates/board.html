@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="60">
+<title>Ride-hailing pipeline — control centre</title>
+<script src="{% static 'chart.min.js' %}"></script>
+<style>
+  :root {
+    --bg:      #EEF1F4;
+    --panel:   #FFFFFF;
+    --side:    #16303B;
+    --side-2:  #0F2530;
+    --ink:     #14262F;
+    --muted:   #6E828C;
+    --hair:    #E1E7EA;
+    --teal:    #2A6B5F;
+    --teal-2:  #3E9183;
+    --amber:   #C08A1E;
+    --rust:    #B0472F;
+    --indigo:  #3B5B8C;
+    --slate:   #7C93A0;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14.5px/1.5 "Segoe UI", system-ui, sans-serif;
+         font-variant-numeric: tabular-nums; }
+
+  /* ---------- sidebar ---------- */
+  .shell { display:flex; min-height:100vh; }
+  aside { width:236px; flex:0 0 236px; background:var(--side); color:#D6E2E6;
+          padding:0 0 30px; }
+  aside .brand { padding:22px 20px 18px; border-bottom:1px solid #22414D; }
+  aside .brand b { display:block; font-size:.95rem; color:#fff; font-weight:600; }
+  aside .brand span { font-size:.7rem; color:#8AA6B0; }
+  aside h6 { margin:22px 20px 8px; font-size:.66rem; color:#7E9AA5;
+             font-weight:600; letter-spacing:.06em; }
+  aside a, aside .item { display:flex; justify-content:space-between;
+             align-items:center; padding:8px 20px; color:#C6D6DC;
+             text-decoration:none; font-size:.82rem; }
+  aside a:hover { background:var(--side-2); color:#fff; }
+  aside .item.on { background:var(--side-2); color:#fff;
+                   box-shadow: inset 3px 0 0 var(--teal-2); }
+  aside .dot { width:7px; height:7px; border-radius:50%; background:var(--teal-2); }
+  aside .num { font-size:.72rem; color:#8AA6B0; }
+
+  /* ---------- main ---------- */
+  main { flex:1; min-width:0; }
+  .topbar { background:var(--panel); border-bottom:1px solid var(--hair);
+            padding:13px 26px; display:flex; justify-content:space-between;
+            align-items:center; gap:18px; flex-wrap:wrap; }
+  .topbar h1 { margin:0; font-size:.98rem; font-weight:600; }
+  .topbar .sub { font-size:.74rem; color:var(--muted); }
+  .topbar .live { font-size:.72rem; color:var(--muted); }
+  .topbar .live b { color:var(--teal); }
+  .content { padding:24px 26px 70px; max-width:1320px; }
+
+  /* ---------- stat cards ---------- */
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+           gap:16px; }
+  .card { border-radius:6px; padding:16px 18px 10px; color:#fff;
+          position:relative; overflow:hidden; min-height:118px; }
+  .card .v { font-size:1.85rem; font-weight:600; line-height:1.05; }
+  .card .v small { font-size:.72rem; font-weight:400; opacity:.85; }
+  .card .k { font-size:.76rem; opacity:.9; margin-top:2px; }
+  .card .note { font-size:.68rem; opacity:.75; margin-top:6px; }
+  .c-teal   { background:linear-gradient(140deg,#2A6B5F,#3E9183); }
+  .c-indigo { background:linear-gradient(140deg,#33507C,#4A6FA5); }
+  .c-amber  { background:linear-gradient(140deg,#A9740E,#C99B2E); }
+  .c-rust   { background:linear-gradient(140deg,#9C3B25,#C05A40); }
+  .c-slate  { background:linear-gradient(140deg,#54707C,#748C97); }
+
+  /* ---------- panels ---------- */
+  .row { display:grid; gap:16px; margin-top:16px; }
+  .r-2  { grid-template-columns:1fr 1fr; }
+  .r-21 { grid-template-columns:2fr 1fr; }
+  .r-12 { grid-template-columns:1fr 2fr; }
+  @media (max-width:980px){ .r-2,.r-21,.r-12{grid-template-columns:1fr;} }
+
+  .panel { background:var(--panel); border:1px solid var(--hair);
+           border-radius:6px; padding:16px 18px 14px; }
+  .panel > h2 { margin:0; font-size:.88rem; font-weight:600; }
+  .panel > .src { margin:3px 0 12px; font-size:.73rem; color:var(--muted); }
+  .panel > .foot { margin:10px 0 0; font-size:.71rem; color:var(--muted); }
+  .cbox { position:relative; height:250px; }
+  .cbox.tall { height:300px; }
+  .cbox.short { height:190px; }
+
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:6px 9px; text-align:left; font-size:.78rem;
+          border-bottom:1px solid var(--hair); white-space:nowrap; }
+  th { font-weight:600; font-size:.69rem; color:var(--muted); background:#FAFBFC; }
+  tr:last-child td { border-bottom:0; }
+  td.n,th.n { text-align:right; }
+  td.dim { color:var(--muted); }
+  .sev { display:inline-block; width:6px; height:6px; border-radius:50%;
+         margin-right:6px; vertical-align:1px; }
+  .sev.hi{background:var(--rust);} .sev.md{background:var(--amber);}
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px;
+          font-size:.68rem; background:#EDF2F3; color:var(--muted); }
+  .pill.good{background:#E6F1EE;color:var(--teal);}
+  .pill.warn{background:#FAF2E1;color:var(--amber);}
+
+  .filter { display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+            font-size:.79rem; color:var(--muted); }
+  select,button { font:inherit; font-size:.79rem; padding:5px 9px;
+                  border:1px solid var(--hair); background:var(--panel);
+                  color:var(--ink); border-radius:3px; }
+  button { background:var(--side); color:#fff; border-color:var(--side);
+           cursor:pointer; }
+  button:focus-visible,select:focus-visible{outline:2px solid var(--amber);
+           outline-offset:2px;}
+  .none { border-left:2px solid var(--amber); padding:11px 13px;
+          font-size:.78rem; color:var(--muted); background:#FAFBFC; }
+  .metricline { display:flex; gap:20px; flex-wrap:wrap; font-size:.78rem;
+                margin-bottom:10px; }
+  .metricline div b { display:block; font-size:1.1rem; font-weight:600; }
+  .metricline div span { color:var(--muted); font-size:.71rem; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<aside>
+  <div class="brand">
+    <b>Ride-hailing pipeline</b>
+    <span>Big Data Essentials · ETA prediction</span>
+  </div>
+
+  <h6>PIPELINE STAGES</h6>
+  <div class="item on"><span>Dispatch board</span><span class="dot"></span></div>
+  <a href="http://localhost:8080/admin/" target="_blank"><span>Django admin</span><span class="num">:8080</span></a>
+  <a href="http://127.0.0.1:8001/api/health/" target="_blank"><span>DRF producer</span><span class="num">:8001</span></a>
+  <a href="http://localhost:9870" target="_blank"><span>HDFS NameNode</span><span class="num">:9870</span></a>
+  <a href="http://localhost:4040" target="_blank"><span>Spark UI</span><span class="num">:4040</span></a>
+
+  <h6>DATA VOLUME</h6>
+  <div class="item"><span>Trips in MariaDB</span><span class="num">{{ summary.trips }}</span></div>
+  <div class="item"><span>Drivers</span><span class="num">{{ summary.drivers }}</span></div>
+  <div class="item"><span>Late-trip alerts</span><span class="num">{{ summary.alerts }}</span></div>
+  {% if metrics %}
+  <div class="item"><span>Model R²</span><span class="num">{{ metrics.0.r2 }}</span></div>
+  {% endif %}
+
+  <h6>ARCHITECTURE</h6>
+  <div class="item"><span style="font-size:.72rem;line-height:1.7;color:#9DB4BD">
+    Faker → DRF → Kafka (3 partitions)<br>
+    → Connect → MariaDB + HDFS<br>
+    → PySpark + MLlib → here
+  </span></div>
+</aside>
+
+<main>
+  <div class="topbar">
+    <div>
+      <h1>Dispatch board</h1>
+      <div class="sub">Live operational view, PySpark insights and Spark MLlib ETA predictions</div>
+    </div>
+    <form class="filter" method="get">
+      <label for="zone">Pickup zone</label>
+      <select name="zone" id="zone">
+        <option value="">All zones</option>
+        {% for z in zones %}<option value="{{ z }}" {% if z == zone_filter %}selected{% endif %}>{{ z }}</option>{% endfor %}
+      </select>
+      <button type="submit">Apply</button>
+      {% if zone_filter %}<a href="/" style="color:var(--muted)">clear</a>{% endif %}
+    </form>
+    <div class="live"><b>Live</b> · auto-refresh 60s</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ STAT CARDS ============ -->
+    <div class="cards">
+      <div class="card c-teal">
+        <div class="v">{{ summary.trips }}</div>
+        <div class="k">Trips ingested</div>
+        <div class="note">via Kafka Connect JDBC sink</div>
+      </div>
+      <div class="card c-indigo">
+        <div class="v">{{ summary.avg_duration }}<small> min</small></div>
+        <div class="k">Mean trip time</div>
+        <div class="note">over {{ summary.avg_distance }} km average</div>
+      </div>
+      <div class="card c-amber">
+        <div class="v">{{ summary.revenue_m }}<small>M</small></div>
+        <div class="k">Fares collected, RWF</div>
+        <div class="note">{{ summary.drivers }} drivers active</div>
+      </div>
+      <div class="card c-rust">
+        <div class="v">{{ summary.alerts }}</div>
+        <div class="k">Trips over 3× expected</div>
+        <div class="note">{{ summary.alert_pct }}% — flagged by the consumer group</div>
+      </div>
+      {% if metrics %}
+      <div class="card c-slate">
+        <div class="v">{{ metrics.0.mae }}<small> min</small></div>
+        <div class="k">Model mean error</div>
+        <div class="note">R² {{ metrics.0.r2 }} on held-out data</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ============ INSIGHT 2: hourly demand ============ -->
+    <div class="row r-21">
+      <div class="panel">
+        <h2>Insight 1 — demand through the day</h2>
+        <p class="src">PySpark aggregate over the full history in HDFS. Amber bars are rush hours; the line is mean trip duration on the right axis.</p>
+        <div class="cbox"><canvas id="cHourly"></canvas></div>
+        <p class="foot">Two commuter peaks. Duration rises to ~50 min in rush hours against ~41 elsewhere — the 1.2× congestion effect the model learns.</p>
+      </div>
+      <div class="panel">
+        <h2>Trip mix by traffic</h2>
+        <p class="src">Share of all trips by observed traffic level.</p>
+        <div class="cbox"><canvas id="cShare"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ============ INSIGHT 3 + zones ============ -->
+    <div class="row r-2">
+      <div class="panel">
+        <h2>Insight 2 — what congestion costs</h2>
+        <p class="src">Minutes per kilometre, normalised for trip length so this isolates traffic rather than distance.</p>
+        <div class="cbox short"><canvas id="cTraffic"></canvas></div>
+        <p class="foot">Gridlock more than doubles travel time per km against light traffic. This is the evidence for using traffic as a model feature.</p>
+      </div>
+      <div class="panel">
+        <h2>Insight 3 — demand by zone</h2>
+        <p class="src">Trips and fares per pickup zone, computed by PySpark from HDFS.</p>
+        <div class="cbox short"><canvas id="cZones"></canvas></div>
+        <p class="foot">Near-uniform across zones, so dispatch gains come from timing rather than geography.</p>
+      </div>
+    </div>
+
+    <!-- ============ MLlib ============ -->
+    {% if metrics %}
+    <div class="row r-12">
+      <div class="panel">
+        <h2>Model performance</h2>
+        <p class="src">Spark MLlib, evaluated on a held-out 20% test split.</p>
+        <div class="metricline">
+          <div><b>{{ metrics.0.rmse }}</b><span>RMSE, min</span></div>
+          <div><b>{{ metrics.0.mae }}</b><span>MAE, min</span></div>
+          <div><b>{{ metrics.0.r2 }}</b><span>R²</span></div>
+        </div>
+        <div class="cbox short"><canvas id="cModels"></canvas></div>
+        <p class="foot">Trained on {{ metrics.0.train_rows }} rows, tested on {{ metrics.0.test_rows }} never seen during training. Lower is better.</p>
+      </div>
+      <div class="panel">
+        <h2>Predicted against actual trip time</h2>
+        <p class="src">Each point is one scored trip. The dashed line is perfect prediction.</p>
+        <div class="cbox"><canvas id="cScatter"></canvas></div>
+        <p class="foot">Spread around the diagonal is the generator's irreducible Gaussian noise (SD 1.8 min) — no model can predict it, which is why R² cannot reach 1.0.</p>
+      </div>
+    </div>
+
+    <div class="row r-2">
+      <div class="panel">
+        <h2>Where the errors fall</h2>
+        <p class="src">Absolute prediction error, bucketed.</p>
+        <div class="cbox short"><canvas id="cErrors"></canvas></div>
+        {% if pred_stats %}
+        <p class="foot">{{ pred_stats.n }} trips scored · {{ pred_stats.within3 }}% predicted within 3 minutes · mean absolute error {{ pred_stats.mae }} min.</p>
+        {% endif %}
+      </div>
+      <div class="panel">
+        <h2>Weather effect on pace</h2>
+        <p class="src">Mean minutes per kilometre by weather condition.</p>
+        <div class="cbox short"><canvas id="cWeather"></canvas></div>
+        <p class="foot">A smaller effect than traffic, but real — and the reason weather is a model feature too.</p>
+      </div>
+    </div>
+    {% else %}
+    <div class="row"><div class="panel"><h2>Model performance</h2>
+      <p class="none">No model metrics yet. Run train_model.py.</p></div></div>
+    {% endif %}
+
+    <!-- ============ TABLES ============ -->
+    <div class="row r-2">
+      <div class="panel">
+        <h2>Trips worth a phone call</h2>
+        <p class="src">Flagged by the custom Kafka consumer group as each record arrives. Partition and offset identify which consumer instance handled it.</p>
+        {% if alerts %}
+        <table>
+          <tr><th>Driver</th><th>Route</th><th class="n">km</th><th class="n">Took</th>
+              <th class="n">Over</th><th class="n">Part.</th><th class="n">Offset</th></tr>
+          {% for a in alerts %}
+          <tr>
+            <td><span class="sev {% if a.ratio >= 3.5 %}hi{% else %}md{% endif %}"></span>{{ a.driver_id }}</td>
+            <td class="dim">{{ a.pickup_zone }} → {{ a.dropoff_zone }}</td>
+            <td class="n">{{ a.distance_km }}</td>
+            <td class="n">{{ a.duration_min }}</td>
+            <td class="n">{{ a.ratio }}×</td>
+            <td class="n dim">{{ a.partition_id }}</td>
+            <td class="n dim">{{ a.kafka_offset }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}<p class="none">Nothing flagged. Start the consumer group.</p>{% endif %}
+      </div>
+
+      <div class="panel">
+        <h2>Largest prediction errors</h2>
+        <p class="src">The hardest trips for the model — worth understanding, not hiding.</p>
+        {% if predictions %}
+        <table>
+          <tr><th>Route</th><th class="n">km</th><th>Traffic</th>
+              <th class="n">Actual</th><th class="n">Pred.</th><th class="n">Err</th></tr>
+          {% for p in predictions %}
+          <tr>
+            <td class="dim">{{ p.pickup_zone }} → {{ p.dropoff_zone }}</td>
+            <td class="n">{{ p.distance_km }}</td>
+            <td><span class="pill">{{ p.traffic_level }}</span></td>
+            <td class="n">{{ p.actual_min }}</td>
+            <td class="n">{{ p.predicted_min }}</td>
+            <td class="n">{{ p.error_min }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}<p class="none">Run score_batch.py, then load_predictions.py.</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="panel">
+        <h2>Arriving now</h2>
+        <p class="src">Read from MariaDB, where the Kafka Connect JDBC sink writes every record automatically — no manual copy step anywhere in the chain.</p>
+        {% if recent %}
+        <table>
+          <tr><th>Driver</th><th>Route</th><th class="n">km</th><th class="n">Minutes</th>
+              <th>Traffic</th><th>Weather</th><th class="n">Fare, RWF</th></tr>
+          {% for t in recent %}
+          <tr>
+            <td>{{ t.driver_id }}</td>
+            <td class="dim">{{ t.pickup_zone }} → {{ t.dropoff_zone }}</td>
+            <td class="n">{{ t.distance_km }}</td>
+            <td class="n">{{ t.duration_min }}</td>
+            <td><span class="pill">{{ t.traffic_level }}</span></td>
+            <td class="dim">{{ t.weather }}</td>
+            <td class="n">{{ t.fare_rwf|floatformat:0 }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}<p class="none">No trips in MariaDB yet.</p>{% endif %}
+      </div>
+    </div>
+
+  </div>
+</main>
+</div>
+
+<script>
+const HOURLY  = {{ j_hourly|safe }};
+const TRAFFIC = {{ j_traffic|safe }};
+const SHARE   = {{ j_traffic_share|safe }};
+const ZONES   = {{ j_zones|safe }};
+const SCATTER = {{ j_scatter|safe }};
+const DIAGMAX = {{ j_diag_max|safe }};
+const ERRORS  = {{ j_errors|safe }};
+const WEATHER = {{ j_weather|safe }};
+const MODELS  = {{ j_models|safe }};
+
+const INK='#14262F', MUTED='#6E828C', HAIR='#E1E7EA';
+const TEAL='#2A6B5F', TEAL2='#3E9183', AMBER='#C08A1E',
+      RUST='#B0472F', INDIGO='#3B5B8C', SLATE='#7C93A0';
+
+Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+Chart.defaults.font.size = 11;
+Chart.defaults.color = MUTED;
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.maintainAspectRatio = false;
+
+const grid = { color: HAIR, drawBorder:false };
+
+// 1. hourly demand: bars + duration line on a second axis
+if (HOURLY.labels.length) new Chart(document.getElementById('cHourly'), {
+  data: {
+    labels: HOURLY.labels,
+    datasets: [
+      { type:'bar', label:'trips', data: HOURLY.counts, yAxisID:'y',
+        backgroundColor: HOURLY.rush.map(r => r ? AMBER : '#B7C7CE'),
+        borderRadius:2, order:2 },
+      { type:'line', label:'mean minutes', data: HOURLY.durations,
+        yAxisID:'y1', borderColor: RUST, backgroundColor:'rgba(176,71,47,.08)',
+        borderWidth:2, pointRadius:2, tension:.35, fill:true, order:1 }
+    ]
+  },
+  options: { scales: {
+      x:{ grid:{display:false} },
+      y:{ grid, title:{display:true,text:'trips'} },
+      y1:{ position:'right', grid:{display:false},
+           title:{display:true,text:'mean min'}, ticks:{color:RUST} } } }
+});
+
+// 2. doughnut: trip mix by traffic
+if (SHARE.labels.length) new Chart(document.getElementById('cShare'), {
+  type:'doughnut',
+  data:{ labels: SHARE.labels,
+         datasets:[{ data: SHARE.counts,
+           backgroundColor:[TEAL, TEAL2, AMBER, RUST], borderWidth:0 }] },
+  options:{ cutout:'58%', plugins:{ legend:{ position:'bottom' } } }
+});
+
+// 3. horizontal bar: minutes per km by traffic
+if (TRAFFIC.labels.length) new Chart(document.getElementById('cTraffic'), {
+  type:'bar',
+  data:{ labels: TRAFFIC.labels,
+         datasets:[{ label:'min / km', data: TRAFFIC.mpk,
+           backgroundColor:[TEAL, TEAL2, AMBER, RUST], borderRadius:3 }] },
+  options:{ indexAxis:'y', plugins:{legend:{display:false}},
+            scales:{ x:{ grid, title:{display:true,text:'minutes per km'} },
+                     y:{ grid:{display:false} } } }
+});
+
+// 4. grouped bar: zone demand and fares
+if (ZONES.labels.length) new Chart(document.getElementById('cZones'), {
+  data:{ labels: ZONES.labels,
+    datasets:[
+      { type:'bar', label:'trips', data: ZONES.counts, yAxisID:'y',
+        backgroundColor: INDIGO, borderRadius:2 },
+      { type:'line', label:'fares, M RWF', data: ZONES.fares, yAxisID:'y1',
+        borderColor: AMBER, borderWidth:2, pointRadius:2.5, tension:.3 } ] },
+  options:{ scales:{ x:{grid:{display:false},ticks:{maxRotation:45,minRotation:45}},
+                     y:{grid}, y1:{position:'right',grid:{display:false}} } }
+});
+
+// 5. scatter: predicted vs actual with the perfect-prediction diagonal
+if (SCATTER.length) new Chart(document.getElementById('cScatter'), {
+  type:'scatter',
+  data:{ datasets:[
+    { label:'scored trips', data: SCATTER, pointRadius:2,
+      backgroundColor:'rgba(42,107,95,.35)' },
+    { label:'perfect prediction', type:'line',
+      data:[{x:0,y:0},{x:DIAGMAX,y:DIAGMAX}], borderColor:RUST,
+      borderDash:[5,4], borderWidth:1.4, pointRadius:0 } ] },
+  options:{ scales:{
+    x:{ grid, min:0, max:DIAGMAX, title:{display:true,text:'actual minutes'} },
+    y:{ grid, min:0, max:DIAGMAX, title:{display:true,text:'predicted minutes'} } },
+    plugins:{ legend:{ position:'bottom' } } }
+});
+
+// 6. bar: error distribution
+if (ERRORS.counts.some(c=>c>0)) new Chart(document.getElementById('cErrors'), {
+  type:'bar',
+  data:{ labels: ERRORS.labels,
+    datasets:[{ label:'trips', data: ERRORS.counts,
+      backgroundColor:[TEAL, TEAL2, SLATE, AMBER, RUST], borderRadius:3 }] },
+  options:{ plugins:{legend:{display:false}},
+            scales:{ x:{grid:{display:false}}, y:{grid} } }
+});
+
+// 7. radar: weather effect on pace
+if (WEATHER.labels.length) new Chart(document.getElementById('cWeather'), {
+  type:'radar',
+  data:{ labels: WEATHER.labels,
+    datasets:[{ label:'min / km', data: WEATHER.mpk,
+      borderColor: INDIGO, backgroundColor:'rgba(59,91,140,.16)',
+      borderWidth:2, pointRadius:3 }] },
+  options:{ plugins:{legend:{display:false}},
+            scales:{ r:{ angleLines:{color:HAIR}, grid:{color:HAIR},
+                         pointLabels:{color:MUTED} } } }
+});
+
+// 8. bar: GBT against the linear baseline
+if (MODELS.labels.length > 1) new Chart(document.getElementById('cModels'), {
+  type:'bar',
+  data:{ labels: MODELS.labels,
+    datasets:[
+      { label:'RMSE', data: MODELS.rmse, backgroundColor: TEAL, borderRadius:3 },
+      { label:'MAE',  data: MODELS.mae,  backgroundColor: SLATE, borderRadius:3 } ] },
+  options:{ plugins:{legend:{position:'bottom'}},
+            scales:{ x:{grid:{display:false}},
+                     y:{grid, title:{display:true,text:'minutes'}} } }
+});
+</script>
+</body>
+</html>
